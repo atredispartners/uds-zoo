@@ -1,0 +1,308 @@
+<html class="tui-bg-blue-black"> 
+    <link rel="stylesheet" href="tuicss.min.css"/>
+    <script src="tuicss.min.js"></script>
+
+    <script>
+
+        function updateLevelList() {
+            levels = JSON.parse(this.responseText)
+            if(levels != null){
+                ll = document.getElementById('level-list');
+                //clear out the level list first
+                ll.innerHTML = '<ul name="level-list">';
+                //append to the level-list
+                for (let i = 0; i < levels.length; i++) {
+                    x = ll.appendChild(document.createElement('li'));
+                    x.innerHTML = `<a href="#!" onclick="getLevelDetails('${levels[i].id}')"><span class="red-168-text">${levels[i].id}</span>${levels[i].name}</a>`;
+                }
+                writeDebug('Successfully updated level data')
+            } else {
+                writeErr('Server has no levels registered')
+            }
+        }
+
+        function handleReqError() {
+            if (this.readyState == 4) {
+                // connection refused
+                if (this.status == 0) {
+                    writeErr(`Server connection refused`)
+                } else {
+                    var error = JSON.parse(this.responseText)
+                    if( error != null)
+                        writeErr(`Server error: ${error.error}`)
+                    else
+                        writeErr(`Server error: ${this.responseText}`)
+                }
+            }
+        }
+
+        function getLevelList(){
+            var xhr = new XMLHttpRequest();
+            xhr.addEventListener("load", updateLevelList);
+            xhr.addEventListener("error", handleReqError);
+            xhr.open("GET", "http://localhost:8888/instances");
+            xhr.send();
+        }
+
+        function handleLevelDetails(){
+            var level = JSON.parse(this.responseText)
+            if(levels != null){
+                updateSelectedLevel(level.id,level.name,level.description)
+            }
+        }
+
+        function getLevelDetails(level_id){
+            var xhr = new XMLHttpRequest();
+            xhr.addEventListener("load", handleLevelDetails);
+            xhr.addEventListener("error", handleReqError);
+            xhr.open("GET", "http://localhost:8888/instances/"+level_id);
+            xhr.send();
+        }
+
+        function recvUDSResponse(){
+            udsResp = JSON.parse(this.responseText)
+            if(udsResp.sid && udsResp.data) {
+                writeLog('RX: ' + udsResp.sid + ' ' + udsResp.data)
+                writeHexDump('RX: ', udsResp.sid + udsResp.data, 16)
+            }
+            else{
+                if(udsResp.error)
+                    writeErr(`Server error: ${udsResp.error}`)
+                else
+                    writeErr(`Server error: ${this.responseText}`)
+            }
+
+        }
+
+        function sendUDSMessage(current_id,payload) {
+            if (current_id == '???') {
+                writeErr("Please select a level first")
+            } else {
+                var xhr = new XMLHttpRequest();
+                var udsmsg = {}
+                udsmsg.sid = payload.substring(0, 2)
+                udsmsg.data = payload.substring(2,).replaceAll(' ', '')
+                writeHexDump('TX: ', udsmsg.sid + udsmsg.data, 16)
+                xhr.addEventListener("load", recvUDSResponse)
+                xhr.addEventListener("error", handleReqError);
+                xhr.open("POST", "http://localhost:8888/uds/" + current_id, true)
+                xhr.setRequestHeader("Content-Type", "application/json")
+                xhr.send(JSON.stringify(udsmsg))
+            }
+        }
+
+        function updateSelectedLevel(id,name,description){
+            //update the status bar
+            sb = document.getElementById('current-level-id')
+            sb.innerText=id;
+            sb = document.getElementById('current-level-name')
+            sb.innerText=' - '+name;
+
+            //update the Level-info window
+            linfo = document.getElementById('level-info')
+            linfo.innerHTML = id +': ' + name + '\n' + description
+
+            //write console output
+            writeLog('<Level changed> '+id +': ' + name)
+
+        }
+
+        function writeLog(logmsg){
+            cl = document.getElementById('console-log')
+            cl.innerHTML += '\n' + logmsg.trim()
+            cl.scrollTop = cl.scrollHeight
+        }
+
+        function writeErr(errmsg){
+            cl = document.getElementById('console-log')
+            cl.innerHTML += '\nERROR: '+ errmsg.trim()
+            cl.scrollTop = cl.scrollHeight
+        }
+
+        function writeDebug(dbgmsg){
+            if(document.getElementById('debug-on').checked) {
+                cl = document.getElementById('console-log')
+                cl.innerHTML += '\nDEBUG: ' + dbgmsg.trim()
+                cl.scrollTop = cl.scrollHeight
+            }
+        }
+
+        function writeHexDump(heading,data,width=8){
+            linfo = document.getElementById('hexdump-window')
+            linfo.innerHTML += heading + '\n' + unhexlify_dump(data,width) + '\n'
+            linfo.scrollTop = linfo.scrollHeight
+        }
+        
+        //pulls the current user input from the input box
+        function getInput(){
+            return document.getElementById('user-input').value
+        }
+
+        function sendIt(){
+            cval = getInput()
+            current_id = document.getElementById('current-level-id').innerText
+            writeLog('TX: ' + cval)
+            sendUDSMessage(current_id,cval)
+
+        }
+        // turn hexlified content into a hexdump
+        function unhexlify_dump(buffer, blockSize) {
+            blockSize = blockSize || 16;
+            var lines = [];
+            var hex = "0123456789ABCDEF";
+            for (var b = 0; b < buffer.length; b += blockSize) {
+                var block = buffer.slice(b, Math.min(b + blockSize, buffer.length));
+
+                var addr = ("0000" + b.toString(16)).slice(-4);
+                var codes = ""
+                var chars = ""
+                for(let i=0;i<block.length;i+=2){
+                    cur_hex = block.substring(i,i+2)
+                    codes += cur_hex + " "
+                    chars += String.fromCharCode(parseInt(cur_hex,16)).replace(/[\x00-\x1F\x20]/g, '.')
+                }
+                codes += "   ".repeat(blockSize - (block.length/2));
+                chars +=  " ".repeat(blockSize - block.length);
+                lines.push(addr + " " + codes + "  " + chars);
+            }
+            return lines.join("\n");
+        }
+    </script>
+
+
+<body>
+    <div id="main-screen" class="tui-bg-blue-black centered bordered">
+        <nav class="tui-nav" id="navbar">
+            <span class="tui-datetime" data-format="h:m:s a"></span>
+            <ul>
+                <li class="tui-dropdown" onclick=getLevelList()>
+                    <span class="red-168-text">L</span>evels
+                    <div class="tui-dropdown-content">
+                        <ul id="level-list">
+                        </ul>
+                    </div>
+                </li>
+            </ul>
+        </nav>
+        <div class="tui-statusbar">
+            <ul>
+                <li><span class="red-168-text">Current Level:</span><span id=current-level-id>???</span><span id=current-level-name>???</span></li>
+            </ul>
+        </div>
+<table>
+    <tr>
+        <div class="tui-window" style="position: relative; left: 10px; top: 30px; width: 60%; height: 75%;">
+            <fieldset class="tui-fieldset" style="width: 100%; height: 100%;">
+                <legend class="center">Console Output</legend>
+                <textarea id="console-log" readonly class="tui-textarea full-height full-width"></textarea>
+            </fieldset>
+        </div>
+        <div class="tui-window" style="position: relative; left: 10px; top: 30px; width: 39%; height: 75%;">
+            <fieldset class="tui-fieldset" style="width: 100%; height: 40%;">
+                <legend class="center">Level Info</legend>
+                <textarea id="level-info" readonly class="tui-textarea full-height full-width"></textarea>
+            </fieldset>
+            <fieldset class="tui-fieldset" style="width: 100%;height: 40%;">
+                <legend class="center">Hex Dump</legend>
+                <textarea id="hexdump-window" readonly class="tui-textarea full-height full-width"></textarea>
+            </fieldset>
+            <fieldset class="tui-fieldset" style="width: 100%;height: 40%;">
+                <legend class="center">Reference</legend>
+                <textarea id="ref-window" readonly="" class="tui-textarea full-height full-width">== Service Identifiers ==
+10 - DiagnosticSessionControl
+11 - ECUReset
+27 - SecurityAccess
+28 - CommunicationControl
+3E - TesterPresent
+83 - AccessTimingParameter
+84 - SecuredDataTransmission
+85 - ControlDTCSetting
+86 - ResponseOnEvent
+87 - LinkControl
+22 - ReadDataByIdentifier
+23 - ReadMemoryByAddress
+24 - ReadScalingDataByIdentifier
+2A - ReadDataByPeriodicIdentifier
+2C - DynamicallyDefineDataIdentifier
+2E - WriteDataByIdentifier
+3D - WriteMemoryByAddress
+14 - ClearDiagnosticInformation
+19 - ReadDTCInformation
+2F - InputOutputControlByIdentifier
+31 - RoutineControl
+34 - RequestDownload
+35 - RequestUpload
+36 - TransferData
+37 - RequestTransferExit
+
+== Response Codes ==
+10 - General reject
+11 - Service not supported
+12 - Sub-Function not supported
+13 - Incorrect message length or invalid format
+14 - Response too long
+21 - Busy repeat request
+22 - Conditions not correct
+24 - Request sequence error
+25 - No response from sub-net component
+26 - Failure prevents execution of requested action
+31 - Request out of range
+33 - Security access denied
+35 - Invalid key
+36 - Exceeded number of attempts
+37 - Required time delay not expired
+70 - Upload/Download not accepted
+71 - Transfer data suspended
+72 - General programming failure
+73 - Wrong Block Sequence Counter
+78 - Request correctly received, but response is pending
+7E - Sub-Function not supported in active session
+7F - Service not supported in active session
+                </textarea>
+            </fieldset>
+        </div>
+    </tr>
+    <tr>
+        <div class="tui-window" style="position: relative; left: 15px; top: 30px; width: 59%; height: 7%;">
+            <fieldset class="tui-fieldset" style="width: 100%; height: 100%;">
+                <legend class="center">UDS Command</legend>
+                <input id="user-input" style="position: relative;top:-7px" class="tui-input full-width" type="text"
+                       value="10 02"/>
+                <button id="send-button" class="tui-button" style="position: relative;top: 30px;" onclick='sendIt()'>
+                    Send it
+                </button>
+            </fieldset>
+        </div>
+    </tr>
+    <tr>
+        <fieldset class="tui-input-fieldset" style="position: relative; left: 150px; top: 35px; width: 15%; height: 8%;" >
+            <legend class="center">Settings</legend>
+        <label class="tui-checkbox">Verbose Output
+            <input id="verbose-on" type="checkbox" />
+            <span></span>
+        </label>
+            <label class="tui-checkbox">Debug Output
+                <input id="debug-on" type="checkbox" />
+                <span></span>
+            </label>
+        </fieldset>
+    </tr>
+    </table>
+    </div>
+
+    <script>
+
+
+        //wire up enter key for user-input
+        var input = document.getElementById("user-input");
+        input.addEventListener("keyup", function(event) {
+          if (event.keyCode === 13) {
+           event.preventDefault();
+           document.getElementById("send-button").click();
+          }
+        });
+    </script>
+        
+</body>
+</html>
+
