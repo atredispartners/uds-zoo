@@ -2,6 +2,8 @@
 
 # start the controller first
 cd cmd/controller
+go mod download github.com/tidwall/buntdb
+go get github.com/tidwall/buntdb@v1.2.9
 go build
 
 # delete the data.db if it exists
